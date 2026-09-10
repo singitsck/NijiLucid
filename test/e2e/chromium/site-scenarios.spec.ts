@@ -98,6 +98,18 @@ async function overlayButtonState(page: Page): Promise<string | null> {
   return page.locator('[data-nijilucid-overlay-host]').first().getAttribute('data-nijilucid-button-state');
 }
 
+async function overlayButtonOpacity(page: Page): Promise<string | null> {
+  return page.locator('[data-nijilucid-overlay-host]').first().evaluate(host => {
+    const button = host.shadowRoot?.querySelector('button');
+    return button ? getComputedStyle(button).opacity : null;
+  });
+}
+
+async function expectOverlayButtonFullyHidden(page: Page): Promise<void> {
+  await expect.poll(async () => overlayButtonState(page)).toBe('hidden');
+  await expect.poll(async () => overlayButtonOpacity(page)).toBe('0');
+}
+
 async function expectSingleOverlayForFixtureVideo(page: Page): Promise<void> {
   await expect.poll(async () => totalOverlayCount(page)).toBe(1);
   await expect.poll(async () => videoOverlaySlotCount(page)).toBe(1);
@@ -210,7 +222,7 @@ test('@site keeps delayed initial reveal and uses a click-through geometric wake
   await expect.poll(async () => overlayButtonState(page)).toBe('visible');
   await page.waitForTimeout(2500);
   expect(await overlayButtonState(page)).toBe('visible');
-  await expect.poll(async () => overlayButtonState(page)).toBe('hidden');
+  await expectOverlayButtonFullyHidden(page);
 
   const player = page.locator('#youtube-like-player');
   const controls = page.locator('#youtube-like-control-layer');
@@ -225,9 +237,9 @@ test('@site keeps delayed initial reveal and uses a click-through geometric wake
   await page.mouse.click(wakeX, wakeY);
   await page.mouse.move(outsideX, outsideY);
   await expect(controls).toHaveAttribute('data-click-count', '1');
+  await expectOverlayButtonFullyHidden(page);
   const hiddenAfterClick = await player.screenshot();
   expect(hiddenAfterClick.equals(hiddenBeforeClick)).toBe(true);
-  expect(await overlayButtonState(page)).toBe('hidden');
 
   await page.mouse.move(wakeX, wakeY);
   await page.waitForTimeout(100);
