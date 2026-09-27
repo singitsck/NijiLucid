@@ -39,6 +39,7 @@ const {
 const {
   parseArgs: parseProductionBundleArgs,
   scanProductionBundle,
+  validateTargetManifest,
 } = require('../../scripts/check-production-bundle');
 
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -337,9 +338,25 @@ describe('effect verification tooling', () => {
   });
 
   it('parses production bundle scan dist options', () => {
-    expect(parseProductionBundleArgs([]).distDirs).toEqual(['dist-chrome', 'dist-firefox']);
+    expect(parseProductionBundleArgs([]).distDirs).toEqual(['dist-chrome', 'dist-firefox', 'dist-safari']);
     expect(parseProductionBundleArgs(['--dist', 'dist-chrome']).distDirs).toEqual(['dist-chrome']);
     expect(parseProductionBundleArgs(['--dist=dist-firefox']).distDirs).toEqual(['dist-firefox']);
+  });
+
+  it('requires the Safari WebGPU version floor in Safari bundles', () => {
+    const validManifest = {
+      background: { service_worker: 'background.js' },
+      browser_specific_settings: {
+        safari: { strict_min_version: '26.0' },
+      },
+    };
+
+    expect(validateTargetManifest(validManifest, 'dist-safari')).toEqual([]);
+    expect(validateTargetManifest({}, 'dist-safari')).toEqual([
+      { file: 'manifest.json', token: 'Safari build must use the MV3 background service worker' },
+      { file: 'manifest.json', token: 'Safari build must require Safari 26.0 for WebGPU' },
+    ]);
+    expect(validateTargetManifest({}, 'dist-chrome')).toEqual([]);
   });
 
   it('keeps release software gates in the CI aggregate command', () => {
@@ -347,6 +364,7 @@ describe('effect verification tooling', () => {
     expect(packageJson.scripts['test:ci']).toContain('npm run test:coverage');
     expect(packageJson.scripts['test:ci']).toContain('npm run build:chrome');
     expect(packageJson.scripts['test:ci']).toContain('npm run build:firefox');
+    expect(packageJson.scripts['test:ci']).toContain('npm run build:safari');
     expect(packageJson.scripts['test:ci']).toContain('npm run check:production-bundle');
     expect(packageJson.scripts['test:ci']).toContain('npm run check:release-version');
   });

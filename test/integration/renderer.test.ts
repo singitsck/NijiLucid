@@ -257,6 +257,63 @@ describe('renderer lifecycle', () => {
     }
   });
 
+  it('auto-enables probed external texture upload for safe Safari 27 sources', async () => {
+    const originalUserAgent = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (Macintosh) AppleWebKit/620.1 Version/27.0 Safari/620.1',
+    });
+
+    try {
+      const { renderer, webgpu } = await createRendererHarness({ externalTexture: true });
+
+      expect((renderer as any).frameUploader.getMode()).toBe('external');
+      expect((renderer as any).optimizationFlags.externalTexture).toBe(true);
+      expect((webgpu.device as any).importExternalTexture).toHaveBeenCalled();
+      expect((renderer as any).optimizationFlags.acnetWorkgroupTile).toBe(true);
+
+      renderer.destroy();
+    } finally {
+      if (originalUserAgent) {
+        Object.defineProperty(navigator, 'userAgent', originalUserAgent);
+      } else {
+        Reflect.deleteProperty(navigator, 'userAgent');
+      }
+    }
+  });
+
+  it('keeps Safari 27 MSE sources on the safe native upload path', async () => {
+    const originalUserAgent = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (Macintosh) AppleWebKit/620.1 Version/27.0 Safari/620.1',
+    });
+    const videoHarness = createMockVideo();
+    Object.defineProperty(videoHarness.video, 'currentSrc', {
+      configurable: true,
+      value: 'blob:https://example.com/media-source',
+    });
+
+    try {
+      const { renderer, webgpu } = await createRendererHarness({
+        externalTexture: true,
+        video: videoHarness,
+      });
+
+      expect((renderer as any).frameUploader.getMode()).toBe('native');
+      expect((renderer as any).optimizationFlags.externalTexture).toBe(false);
+      expect((webgpu.device as any).importExternalTexture).not.toHaveBeenCalled();
+
+      renderer.destroy();
+    } finally {
+      if (originalUserAgent) {
+        Object.defineProperty(navigator, 'userAgent', originalUserAgent);
+      } else {
+        Reflect.deleteProperty(navigator, 'userAgent');
+      }
+    }
+  });
+
   it('restores native upload and the full effect chain after an external upload failure', async () => {
     const clamp = {
       id: 'anime4k/Helper/ClampHighlights',
@@ -567,6 +624,36 @@ describe('renderer lifecycle', () => {
       requiredFeatures: ['timestamp-query'],
     }));
 
+    renderer.destroy();
+  });
+
+  it('enables shader-f16 for certified variants when the adapter supports it', async () => {
+    installChromeMock();
+    const webgpu = installWebGpuMock({ features: ['shader-f16'] });
+    const requestDeviceSpy = vi.spyOn(webgpu.adapter, 'requestDevice');
+    const videoHarness = createMockVideo();
+    const { plan } = createCompiledPlan(webgpu.device as unknown as GPUDevice);
+    compileEffectChain.mockResolvedValue(plan);
+
+    const canvas = document.createElement('canvas');
+    const context = createMockCanvasContext(webgpu.device as unknown as GPUDevice);
+    vi.spyOn(canvas, 'getContext').mockImplementation((type: string) => (
+      type === 'webgpu' ? context : null
+    ));
+
+    const { Renderer } = await import('../../src/core/renderer');
+    vi.spyOn(Renderer, 'detectWebGPUFeatures').mockResolvedValue(true);
+    const renderer = await Renderer.create({
+      video: videoHarness.video,
+      canvas,
+      effects: [],
+      effectsSignature: 'test-shader-f16',
+      targetDimensions: { width: 320, height: 180 },
+    });
+
+    expect(requestDeviceSpy).toHaveBeenCalledWith(expect.objectContaining({
+      requiredFeatures: ['shader-f16'],
+    }));
     renderer.destroy();
   });
 

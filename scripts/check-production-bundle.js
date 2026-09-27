@@ -3,7 +3,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 
-const defaultDistDirs = ['dist-chrome', 'dist-firefox'];
+const defaultDistDirs = ['dist-chrome', 'dist-firefox', 'dist-safari'];
 const scannedExtensions = new Set(['.js', '.mjs', '.cjs', '.html', '.css', '.json']);
 const forbiddenTokens = [
   'libplacebo',
@@ -96,6 +96,11 @@ function scanProductionBundle({ distDirs }) {
         manifest,
         path.relative(repoRoot, manifestPath).replace(/\\/g, '/'),
       ));
+      findings.push(...validateTargetManifest(
+        manifest,
+        path.basename(root),
+        path.relative(repoRoot, manifestPath).replace(/\\/g, '/'),
+      ));
     }
 
     for (const file of walkFiles(root)) {
@@ -170,6 +175,21 @@ function validateManifestExposure(manifest, file = 'manifest.json') {
   return findings;
 }
 
+function validateTargetManifest(manifest, distName, file = 'manifest.json') {
+  const findings = [];
+
+  if (distName === 'dist-safari') {
+    if (manifest.background?.service_worker !== 'background.js') {
+      findings.push({ file, token: 'Safari build must use the MV3 background service worker' });
+    }
+    if (manifest.browser_specific_settings?.safari?.strict_min_version !== '26.0') {
+      findings.push({ file, token: 'Safari build must require Safari 26.0 for WebGPU' });
+    }
+  }
+
+  return findings;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const { scannedDirs, findings } = scanProductionBundle(args);
@@ -196,4 +216,5 @@ module.exports = {
   scanProductionBundle,
   scannedExtensions,
   validateManifestExposure,
+  validateTargetManifest,
 };

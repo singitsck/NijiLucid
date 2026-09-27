@@ -58,9 +58,11 @@ NijiLucid は WebGPU を利用してアニメ動画の画質をリアルタイ�
 3. 使用するブラウザに合わせてビルド：
    - Chrome/Edge: `npm run build:chrome` を実行
    - Firefox: `npm run build:firefox` を実行
+   - Safari 26 以降: `npm run build:safari` を実行
 4. ブラウザにビルドした拡張機能をロード：
    - Chrome/Edge: 拡張機能ページを開く (`chrome://extensions` または `edge://extensions`) → 開発者モードを有効化 → パッケージ化されていない拡張機能を読み込む → プロジェクトの `dist-chrome` ディレクトリを選択
    - Firefox: `about:debugging#/runtime/this-firefox` を開く → 一時的なアドオンを読み込む → `dist-firefox/manifest.json` を選択
+   - Safari 26 以降: 完全版の Xcode をインストールし、`xcrun safari-web-extension-packager dist-safari` を実行して、生成された Xcode プロジェクトで署名を設定して実行します。本プロジェクトが必要とする WebGPU は Safari 26 で正式に提供されたため、これが最低バージョンです。
 
 ### 一、 初回セットアップ (Onboarding)
 

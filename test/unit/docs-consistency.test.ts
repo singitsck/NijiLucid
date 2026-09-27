@@ -73,8 +73,10 @@ describe('documentation consistency', () => {
 
       expect(content, `${file} should mention Chrome/Edge output`).toContain('dist-chrome');
       expect(content, `${file} should mention Firefox output`).toContain('dist-firefox/manifest.json');
+      expect(content, `${file} should mention Safari output`).toContain('dist-safari');
       expect(content, `${file} should document the Chrome/Edge build command`).toContain('npm run build:chrome');
       expect(content, `${file} should document the Firefox build command`).toContain('npm run build:firefox');
+      expect(content, `${file} should document the Safari build command`).toContain('npm run build:safari');
       expect(content, `${file} should document the Chrome/Edge package`).toContain('nijilucid.zip');
       expect(content, `${file} should document the Firefox package`).toContain('nijilucid-firefox.zip');
       expect(content, `${file} should not tell source builders to load dist`).not.toMatch(/`dist`\s+(?:目录|directory|ディレクトリ|папк)/i);

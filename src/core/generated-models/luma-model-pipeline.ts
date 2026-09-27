@@ -84,7 +84,10 @@ const tuningReportByDevice = new WeakMap<GPUDevice, GeneratedKernelTuningRecord[
 const tuningOverrideByDevice = new WeakMap<GPUDevice, string>();
 // This budget is shared by all generated models on a device. A per-model budget
 // multiplied startup stalls enough to erase the value of online tuning.
-const GENERATED_KERNEL_TUNING_BUDGET_MS = 300;
+// Safari/Metal benefits disproportionately from trying non-square workgroups.
+// Keep startup bounded, but leave enough time to evaluate the expanded candidate
+// set once; the winner is cached per browser/GPU/shader identity afterwards.
+const GENERATED_KERNEL_TUNING_BUDGET_MS = 650;
 
 export interface GeneratedKernelTuningRecord {
   cacheNamespace: string;

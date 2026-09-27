@@ -57,9 +57,11 @@ NijiLucid использует WebGPU для улучшения качества
 3. Соберите расширение для нужного браузера:
    - Chrome/Edge: выполните `npm run build:chrome`
    - Firefox: выполните `npm run build:firefox`
+   - Safari 26+: выполните `npm run build:safari`
 4. Установите собранное вами расширение:
    - Chrome/Edge: Откройте страницу расширений (`chrome://extensions` или `edge://extensions`) → включите режим разработчика → загрузите распакованное расширение → выберите папку `dist-chrome`
    - Firefox: Откройте `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → выберите `dist-firefox/manifest.json`
+   - Safari 26+: установите полную версию Xcode, выполните `xcrun safari-web-extension-packager dist-safari`, затем настройте подпись и запустите созданный проект Xcode. Safari 26 — минимальная версия, поскольку NijiLucid зависит от WebGPU, впервые выпущенного в этой версии.
 
 ### I. Первоначальная настройка (Onboarding)
 

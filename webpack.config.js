@@ -9,8 +9,14 @@ const WebExtensionPlugin = require('webpack-target-webextension');
 module.exports = (env, argv) => {
   const isDevelopment = argv.mode === 'development';
   const targetBrowser = process.env.TARGET_BROWSER || 'chrome';
+  const supportedBrowsers = new Set(['chrome', 'firefox', 'safari']);
+  if (!supportedBrowsers.has(targetBrowser)) {
+    throw new Error(`Unsupported TARGET_BROWSER: ${targetBrowser}`);
+  }
 
-  const manifest = require('./manifest.json');
+  // Webpack may evaluate this factory more than once in the same process. Clone the
+  // base manifest so browser-specific changes never leak into another target.
+  const manifest = structuredClone(require('./manifest.json'));
 
   // 据目标浏览器修改 manifest
   if (targetBrowser === 'firefox') {
@@ -23,6 +29,15 @@ module.exports = (env, argv) => {
         data_collection_permissions: {
           required: ['none']
         }
+      },
+    };
+  } else if (targetBrowser === 'safari') {
+    // WebGPU is a hard runtime dependency and ships in Safari 26 and later.
+    // Keeping the MV3 service worker matches Safari's recommended nonpersistent
+    // background model on both macOS and iOS.
+    manifest.browser_specific_settings = {
+      safari: {
+        strict_min_version: '26.0',
       },
     };
   }
@@ -42,7 +57,7 @@ module.exports = (env, argv) => {
       clean: true, // 清理输出目录
       // Avoid Webpack's automatic public-path fallback (which emits Function()).
       // Async chunks still resolve to packaged extension URLs via runtime.getURL().
-      publicPath: targetBrowser === 'firefox' ? '' : 'auto',
+      publicPath: targetBrowser === 'chrome' ? 'auto' : '',
     },
     module: {
       rules: [

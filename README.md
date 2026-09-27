@@ -57,9 +57,11 @@ NijiLucid 利用 WebGPU 实时提升动漫视频画质，逐帧呈现更清晰�
 3. 根据所用浏览器构建项目：
    - Chrome/Edge: 运行 `npm run build:chrome`
    - Firefox: 运行 `npm run build:firefox`
+   - Safari 26+: 运行 `npm run build:safari`
 4. 在浏览器中加载构建好的扩展：
    - Chrome/Edge: 打开拓展页面(`chrome://extensions` 或 `edge://extensions`) → 启用开发者模式 → 加载已解压的扩展 → 选择项目中的 `dist-chrome` 目录
    - Firefox: 打开 `about:debugging#/runtime/this-firefox` → 临时载入附加组件 → 选择项目中 `dist-firefox/manifest.json`
+   - Safari 26+: 安装完整 Xcode，运行 `xcrun safari-web-extension-packager dist-safari`，然后在生成的 Xcode 项目中设置签名并运行。Safari 26 是最低版本，因为本项目依赖该版本正式提供的 WebGPU。
 
 ### 一、初次设置 (Onboarding)
 

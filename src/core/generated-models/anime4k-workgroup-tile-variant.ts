@@ -145,6 +145,9 @@ export function createAnime4KWorkgroupTileVariants(shaderWGSL: string): KernelVa
   for (const workgroup of [
     { width: 8, height: 8 },
     { width: 16, height: 8 },
+    { width: 8, height: 16 },
+    { width: 16, height: 16 },
+    { width: 32, height: 4 },
   ]) {
     const wgsl = createAnime4KWorkgroupTileVariant(shaderWGSL, workgroup);
     if (wgsl) {
@@ -157,9 +160,9 @@ export function createAnime4KWorkgroupTileVariants(shaderWGSL: string): KernelVa
         inputTextureCount * (workgroup.width + 2) * (workgroup.height + 2) * 16,
       requiredStorageTexturesPerShaderStage: 1,
       requiredSampledTexturesPerShaderStage: inputTextureCount,
-      benchmarkCacheVersion: 1,
+      benchmarkCacheVersion: 2,
       });
     }
   }
-  return variants.length === 2 ? variants : null;
+  return variants.length === 5 ? variants : null;
 }

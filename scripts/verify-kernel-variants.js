@@ -163,7 +163,7 @@ async function main() {
         if (!window.__runEffectVerification) throw new Error('Effect verifier is unavailable.');
         return window.__runEffectVerification({ ...input, kernelVariantOverride: 'untiled-8x8' });
       }, request);
-      for (const variantId of ['tile-8x8', 'tile-16x8']) {
+      for (const variantId of ['tile-8x8', 'tile-16x8', 'tile-8x16', 'tile-16x16', 'tile-32x4']) {
         const candidate = await page.evaluate(async ({ input, variantId }) => {
           if (!window.__runEffectVerification) throw new Error('Effect verifier is unavailable.');
           return window.__runEffectVerification({ ...input, kernelVariantOverride: variantId });

@@ -91,10 +91,13 @@ export function createACNetWorkgroupTileVariants(shaderWGSL: string): KernelVari
     workgroup: { width: 8, height: 8 },
     requiredStorageTexturesPerShaderStage: 1,
     requiredSampledTexturesPerShaderStage: inputTextureCount,
-    benchmarkCacheVersion: 4,
+    benchmarkCacheVersion: 5,
   }, ...[
     { width: 8, height: 8 },
     { width: 16, height: 8 },
+    { width: 8, height: 16 },
+    { width: 16, height: 16 },
+    { width: 32, height: 4 },
   ].map(workgroup => ({
     id: `tile-${workgroup.width}x${workgroup.height}`,
     correctness: 'exact' as const,
@@ -104,7 +107,7 @@ export function createACNetWorkgroupTileVariants(shaderWGSL: string): KernelVari
       inputTextureCount * (workgroup.width + 2) * (workgroup.height + 2) * 16,
     requiredStorageTexturesPerShaderStage: 1,
     requiredSampledTexturesPerShaderStage: inputTextureCount,
-    benchmarkCacheVersion: 4,
+    benchmarkCacheVersion: 5,
   }))];
 }
 
@@ -222,10 +225,13 @@ export function createCuNNyWorkgroupTileVariants(shaderWGSL: string): KernelVari
     workgroup: { width: 8, height: 8 },
     requiredStorageTexturesPerShaderStage: 1,
     requiredSampledTexturesPerShaderStage: inputTextureCount,
-    benchmarkCacheVersion: 4,
+    benchmarkCacheVersion: 5,
   }, ...[
     { width: 8, height: 8 },
     { width: 16, height: 8 },
+    { width: 8, height: 16 },
+    { width: 16, height: 16 },
+    { width: 32, height: 4 },
   ].map(workgroup => ({
     id: `tile-${workgroup.width}x${workgroup.height}`,
     correctness: 'exact' as const,
@@ -237,7 +243,7 @@ export function createCuNNyWorkgroupTileVariants(shaderWGSL: string): KernelVari
       channels * (workgroup.width + 2) * (workgroup.height + 2) * bytesPerValue,
     requiredStorageTexturesPerShaderStage: 1,
     requiredSampledTexturesPerShaderStage: inputTextureCount,
-    benchmarkCacheVersion: 4,
+    benchmarkCacheVersion: 5,
   }))];
 }
 import type { KernelVariant } from '../gpu-capabilities';

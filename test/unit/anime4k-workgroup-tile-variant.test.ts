@@ -30,14 +30,20 @@ describe('Anime4K workgroup tile variants', () => {
     expect(tiled!.indexOf('workgroupBarrier()')).toBeLessThan(tiled!.indexOf('// OOB check'));
   });
 
-  it('builds certified 8x8 and 16x8 variants within explicit resource requirements', () => {
+  it('builds certified Apple-GPU-friendly variants within explicit resource requirements', () => {
     const shader = readFileSync(resolve(
       process.cwd(),
       'src/engines/anime4k/pipelines/upscale/CNNx2M/shaders/conv2dtf.wgsl',
     ), 'utf8');
     const variants = createAnime4KWorkgroupTileVariants(shader)!;
 
-    expect(variants.map(variant => variant.id)).toEqual(['tile-8x8', 'tile-16x8']);
+    expect(variants.map(variant => variant.id)).toEqual([
+      'tile-8x8',
+      'tile-16x8',
+      'tile-8x16',
+      'tile-16x16',
+      'tile-32x4',
+    ]);
     expect(variants[1].wgsl).toContain('@workgroup_size(16, 8)');
     expect(variants.every(variant => variant.correctness === 'exact')).toBe(true);
     expect(variants[1].requiredWorkgroupStorageBytes).toBe(18 * 10 * 16);

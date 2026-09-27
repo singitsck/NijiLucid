@@ -19,10 +19,13 @@ describe('generated workgroup tile variants', () => {
       'untiled-8x8',
       'tile-8x8',
       'tile-16x8',
+      'tile-8x16',
+      'tile-16x16',
+      'tile-32x4',
     ]);
     expect(variants[0].wgsl).toBe(shader);
     expect(variants[0].requiredWorkgroupStorageBytes).toBeUndefined();
-    expect(variants.every(variant => variant.benchmarkCacheVersion === 4)).toBe(true);
+    expect(variants.every(variant => variant.benchmarkCacheVersion === 5)).toBe(true);
   });
 
   it('keeps the original CuNNy shader as the autotuning baseline', () => {
@@ -33,9 +36,12 @@ describe('generated workgroup tile variants', () => {
       'untiled-8x8',
       'tile-8x8',
       'tile-16x8',
+      'tile-8x16',
+      'tile-16x16',
+      'tile-32x4',
     ]);
     expect(variants[0].wgsl).toBe(shader);
     expect(variants[0].requiredWorkgroupStorageBytes).toBeUndefined();
-    expect(variants.every(variant => variant.benchmarkCacheVersion === 4)).toBe(true);
+    expect(variants.every(variant => variant.benchmarkCacheVersion === 5)).toBe(true);
   });
 });

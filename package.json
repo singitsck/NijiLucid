@@ -7,11 +7,14 @@
     "build": "npm run build:chrome",
     "build:chrome": "cross-env TARGET_BROWSER=chrome webpack --mode production",
     "build:firefox": "cross-env TARGET_BROWSER=firefox webpack --mode production",
+    "build:safari": "cross-env TARGET_BROWSER=safari webpack --mode production",
     "dev": "npm run dev:chrome",
     "dev:chrome": "cross-env TARGET_BROWSER=chrome webpack --mode development",
     "dev:firefox": "cross-env TARGET_BROWSER=firefox webpack --mode development",
+    "dev:safari": "cross-env TARGET_BROWSER=safari webpack --mode development",
     "watch:chrome": "cross-env TARGET_BROWSER=chrome webpack --mode development --watch",
     "watch:firefox": "cross-env TARGET_BROWSER=firefox webpack --mode development --watch",
+    "watch:safari": "cross-env TARGET_BROWSER=safari webpack --mode development --watch",
     "generate:acnet": "node scripts/generate-acnet.js",
     "generate:anime4k-cnn": "node scripts/generate-anime4k-cnn.js",
     "generate:cunny": "node scripts/generate-cunny.js",
@@ -44,7 +47,7 @@
     "verify:optimization-report": "node scripts/verify-optimization-report.js",
     "check:public-surface": "node scripts/check-public-surface.js",
     "check:production-bundle": "node scripts/check-production-bundle.js",
-    "check:release-version": "node scripts/check-release-version.js --dist dist-chrome --dist dist-firefox",
+    "check:release-version": "node scripts/check-release-version.js --dist dist-chrome --dist dist-firefox --dist dist-safari",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit-node --project dom --project integration",
     "test:unit": "vitest run --project unit-node",
@@ -56,7 +59,7 @@
     "test:e2e:chromium:matrix": "npm run build:chrome && playwright test --grep @site",
     "test:gpu:smoke": "npm run build:chrome && cross-env RUN_GPU_TESTS=1 playwright test --grep @gpu-smoke",
     "test:gpu:benchmark": "npm run build:chrome && cross-env RUN_GPU_TESTS=1 playwright test --grep @gpu-benchmark",
-    "test:ci": "npm run typecheck && npm run test:coverage && npm run build:chrome && npm run build:firefox && npm run check:production-bundle && npm run check:release-version"
+    "test:ci": "npm run typecheck && npm run test:coverage && npm run build:chrome && npm run build:firefox && npm run build:safari && npm run check:production-bundle && npm run check:release-version"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

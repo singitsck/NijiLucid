@@ -18,7 +18,15 @@ import {
     type GpuResourceError,
 } from './gpu-resource-cache';
 import { clearTexturePool } from './texture-pool';
-import { getRequiredDeviceLimits } from './gpu-device-limits';
+import { collectGpuCapabilities, type GpuCapabilities } from './gpu-capabilities';
+import {
+    createPreferredAdapterOptions,
+    createRuntimeDeviceDescriptor,
+} from './gpu-device-profile';
+import {
+    resolveCapabilityDrivenOptimizationFeatureFlags,
+    type OptimizationFeatureFlags,
+} from './optimization-flags';
 import { createLogger } from '../utils/logger';
 
 // 测试配置
@@ -28,6 +36,7 @@ const TEST_HEIGHT = 1080; // 测试输入高度
 const TARGET_WIDTH = 3840;  // 目标 4K
 const TARGET_HEIGHT = 2160;
 const TARGET_FRAME_TIME_24FPS = 1000 / 24; // 约 41.67ms
+const TARGET_FRAME_TIME_30FPS = 1000 / 30; // 约 33.33ms
 const logger = createLogger('gpu-benchmark');
 
 export const BENCHMARK_EFFECT_IDS: Readonly<Record<PerformanceTier, string>> = {
@@ -208,22 +217,24 @@ export async function runGPUBenchmark(
         ultra: Infinity,
     };
 
-    // 获取 GPU 信息
-    const adapterInfo = await getGPUAdapterInfo();
-
     // 初始化 WebGPU
     if (!navigator.gpu) {
         throw new Error('WebGPU not supported');
     }
 
-    const adapter = await navigator.gpu.requestAdapter();
+    const adapter = await navigator.gpu.requestAdapter(createPreferredAdapterOptions());
     if (!adapter) {
         throw new Error('No GPU adapter available');
     }
 
-    const device = await adapter.requestDevice({
-        requiredLimits: getRequiredDeviceLimits(adapter),
+    const device = await adapter.requestDevice(createRuntimeDeviceDescriptor(adapter));
+    const capabilities = collectGpuCapabilities({
+        adapter,
+        device,
+        presentationFormat: navigator.gpu.getPreferredCanvasFormat(),
     });
+    const optimizationFlags = resolveCapabilityDrivenOptimizationFeatureFlags(capabilities);
+    const adapterInfo = getGPUAdapterInfo(adapter);
 
     // 监听设备丢失事件（区分主动销毁和意外丢失）
     let deviceLost = false;
@@ -278,7 +289,14 @@ export async function runGPUBenchmark(
                 await device.queue.onSubmittedWorkDone();
 
                 const warmupEffects = getBenchmarkEffects('performance');
-                await runEffectChainTest(device, warmupTexture, warmupEffects, gpuErrorMonitor);
+                await runEffectChainTest(
+                    device,
+                    warmupTexture,
+                    warmupEffects,
+                    gpuErrorMonitor,
+                    capabilities,
+                    optimizationFlags,
+                );
                 logger.debug('Global warmup complete.');
             } finally {
                 warmupTexture.destroy();
@@ -329,18 +347,26 @@ export async function runGPUBenchmark(
                 // 运行测试
                 const testAbortController = new AbortController();
                 const { avgTime, maxTime } = await runWithTimeout(
-                    runEffectChainTest(device, inputTexture, effects, gpuErrorMonitor, testAbortController.signal),
+                    runEffectChainTest(
+                        device,
+                        inputTexture,
+                        effects,
+                        gpuErrorMonitor,
+                        capabilities,
+                        optimizationFlags,
+                        testAbortController.signal,
+                    ),
                     TEST_TIMEOUT_MS,
                     testAbortController,
                 );
 
                 scores[tier] = avgTime;
                 maxScores[tier] = maxTime;
-                logger.info(`${tier}: avg=${avgTime.toFixed(2)}ms, max=${maxTime.toFixed(2)}ms per frame`);
+                logger.info(`${tier}: avg=${avgTime.toFixed(2)}ms, p95=${maxTime.toFixed(2)}ms per frame`);
 
-                // 如果能在 24fps 内稳定完成，这个档位可用
-                // 要求：最大帧时间 < 目标帧时间，平均帧时间 < 目标帧时间 * 0.9
-                if (maxTime < TARGET_FRAME_TIME_24FPS && avgTime < TARGET_FRAME_TIME_24FPS * 0.9) {
+                // Require p95 headroom for 24 fps and an average capable of 30 fps.
+                // This avoids recommending a tier based only on batch-average luck.
+                if (maxTime < TARGET_FRAME_TIME_24FPS && avgTime < TARGET_FRAME_TIME_30FPS) {
                     recommendedTier = tier;
                 }
 
@@ -442,6 +468,8 @@ async function runEffectChainTest(
     inputTexture: GPUTexture,
     effects: EnhancementEffect[],
     gpuErrorMonitor: BenchmarkGpuErrorMonitor,
+    capabilities: GpuCapabilities,
+    optimizationFlags: OptimizationFeatureFlags,
     signal?: AbortSignal,
 ): Promise<{ avgTime: number; maxTime: number }> {
     throwIfAborted(signal);
@@ -452,6 +480,8 @@ async function runEffectChainTest(
         effects,
         sourceDimensions: { width: TEST_WIDTH, height: TEST_HEIGHT },
         targetDimensions: { width: TARGET_WIDTH, height: TARGET_HEIGHT },
+        capabilities,
+        optimizationFlags,
     });
     throwIfAborted(signal);
     await gpuErrorMonitor.throwIfCaptured('effect compilation');
@@ -494,7 +524,9 @@ async function runEffectChainTest(
         // 为避免 Firefox 下单帧同步 (onSubmittedWorkDone) 带来的巨大开销，
         // 同时避免一次性提交过多帧导致 TDR (超时检测) 崩溃，
         // 我们使用小批量提交 (Micro-batching) 的策略。
-        const BATCH_SIZE = 6;
+        // Smaller batches expose sustained cadence variance while avoiding the
+        // per-frame synchronization penalty seen on Firefox.
+        const BATCH_SIZE = 3;
 
         for (let frame = 0; frame < testFrames; frame += BATCH_SIZE) {
             throwIfAborted(signal);
@@ -528,7 +560,14 @@ async function runEffectChainTest(
         const stableFrameTimes = frameTimes.slice(WARMUP_DISCARD_FRAMES);
         const totalTime = stableFrameTimes.reduce((a, b) => a + b, 0);
         const avgTime = totalTime / stableFrameTimes.length;
-        const maxTime = Math.max(...stableFrameTimes);
+        const sortedFrameTimes = [...stableFrameTimes].sort((a, b) => a - b);
+        const p95Index = Math.min(
+            sortedFrameTimes.length - 1,
+            Math.ceil(sortedFrameTimes.length * 0.95) - 1,
+        );
+        // Keep the public maxScores field for storage compatibility; it now carries
+        // the much more stable p95 batch-frame duration.
+        const maxTime = sortedFrameTimes[p95Index];
 
         return { avgTime, maxTime };
     } finally {
@@ -540,16 +579,9 @@ async function runEffectChainTest(
 /**
  * 获取 GPU 适配器信息
  */
-async function getGPUAdapterInfo(): Promise<string> {
-    if (!navigator.gpu) return 'WebGPU not supported';
-
+function getGPUAdapterInfo(adapter: GPUAdapter): string {
     try {
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) return 'No adapter';
-
-        const info = (adapter as any).requestAdapterInfo
-            ? await (adapter as any).requestAdapterInfo()
-            : { vendor: '', architecture: '', device: '', description: '' };
+        const info = adapter.info ?? { vendor: '', architecture: '', device: '', description: '' };
 
         return JSON.stringify({
             vendor: info.vendor || 'unknown',

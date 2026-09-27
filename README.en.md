@@ -57,9 +57,11 @@ NijiLucid uses WebGPU to enhance anime video quality in real time, delivering a 
 3. Build for your browser:
    - Chrome/Edge: Run `npm run build:chrome`
    - Firefox: Run `npm run build:firefox`
+   - Safari 26+: Run `npm run build:safari`
 4. Load the built extension in your browser:
    - Chrome/Edge: Open the extensions page (`chrome://extensions` or `edge://extensions`) → enable Developer mode → Load unpacked → select the `dist-chrome` directory
    - Firefox: Open `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → select `dist-firefox/manifest.json`
+   - Safari 26+: Install the full Xcode app, run `xcrun safari-web-extension-packager dist-safari`, then configure signing and run the generated Xcode project. Safari 26 is the minimum because NijiLucid depends on the WebGPU release shipped in that version.
 
 ### I. First Run (Onboarding)
 

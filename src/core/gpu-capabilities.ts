@@ -8,7 +8,7 @@ export interface GpuAdapterIdentity {
 }
 
 export interface BrowserIdentity {
-  name: 'chrome' | 'edge' | 'firefox' | 'unknown';
+  name: 'chrome' | 'edge' | 'firefox' | 'safari' | 'unknown';
   version: string;
   userAgent: string;
 }
@@ -103,6 +103,13 @@ function detectBrowser(userAgent: string): BrowserIdentity {
   const chrome = /(?:Chrome|Chromium)\/([\d.]+)/.exec(userAgent);
   if (chrome) {
     return { name: 'chrome', version: chrome[1], userAgent };
+  }
+
+  // Safari's user agent contains both "Version/x" and "Safari/x". Match it
+  // after Chromium so Chrome on Apple platforms is not misidentified.
+  const safari = /Version\/([\d.]+).*Safari\//.exec(userAgent);
+  if (safari) {
+    return { name: 'safari', version: safari[1], userAgent };
   }
 
   return { name: 'unknown', version: '', userAgent };

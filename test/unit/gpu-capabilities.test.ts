@@ -5,6 +5,7 @@ import {
   isKernelVariantSupported,
   type KernelVariant,
 } from '../../src/core/gpu-capabilities';
+import { resolveCapabilityDrivenOptimizationFeatureFlags } from '../../src/core/optimization-flags';
 
 function createHasOnlyFeatureSet(features: readonly GPUFeatureName[]): GPUSupportedFeatures {
   const supported = new Set(features);
@@ -20,6 +21,22 @@ function createHasOnlyFeatureSet(features: readonly GPUFeatureName[]): GPUSuppor
 }
 
 describe('GPU capability model', () => {
+  it('exposes exact tiled kernels to Safari autotuning while preserving overrides', () => {
+    const capabilities = {
+      browser: { name: 'safari', version: '27.0', userAgent: 'Safari' },
+    } as unknown as ReturnType<typeof collectGpuCapabilities>;
+
+    expect(resolveCapabilityDrivenOptimizationFeatureFlags(capabilities)).toMatchObject({
+      cunnyWorkgroupTile: true,
+      acnetWorkgroupTile: true,
+      anime4kWorkgroupTile: true,
+      kernelAutotune: true,
+    });
+    expect(resolveCapabilityDrivenOptimizationFeatureFlags(capabilities, {
+      acnetWorkgroupTile: false,
+    }).acnetWorkgroupTile).toBe(false);
+  });
+
   it('captures browser, adapter, feature, and limit identities', () => {
     const adapter = {
       features: new Set<GPUFeatureName>(['timestamp-query', 'shader-f16', 'bgra8unorm-storage']),
@@ -82,6 +99,24 @@ describe('GPU capability model', () => {
 
     expect(capabilities.knownFeatures).toEqual(new Set(['timestamp-query', 'shader-f16']));
     expect(capabilities.knownEnabledFeatures).toEqual(new Set(['timestamp-query']));
+  });
+
+  it('identifies Safari separately for browser-scoped GPU tuning caches', () => {
+    const capabilities = collectGpuCapabilities({
+      adapter: {
+        features: new Set<GPUFeatureName>(),
+        info: {},
+        limits: {},
+      } as unknown as GPUAdapter,
+      device: {
+        features: new Set<GPUFeatureName>(),
+        limits: {},
+      } as unknown as GPUDevice,
+      presentationFormat: 'bgra8unorm',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15',
+    });
+
+    expect(capabilities.browser).toMatchObject({ name: 'safari', version: '26.0' });
   });
 
   it('keeps runtime feature dependencies in the Xray-safe probe registry', () => {

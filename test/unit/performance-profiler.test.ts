@@ -266,4 +266,30 @@ describe('PerformanceFrameProfiler', () => {
 
     profiler.destroy();
   });
+
+  it('adapts the HUD budget to decoded video cadence', () => {
+    const onSnapshot = vi.fn<(snapshot: FramePerformanceSnapshot) => void>();
+    const profiler = new PerformanceFrameProfiler({
+      mode: 'lite',
+      gpuName: 'Mock GPU',
+      uploadMethod: 'VideoFrame direct',
+      modeName: 'Mode A',
+      tier: 'balanced',
+      sourceDimensions: { width: 1920, height: 1080 },
+      targetDimensions: { width: 3840, height: 2160 },
+      timestampAvailable: false,
+    }, onSnapshot);
+
+    for (let frame = 0; frame < 12; frame += 1) {
+      (profiler as unknown as { lastSnapshotAt: number }).lastSnapshotAt = -1000;
+      profiler.beginFrame({
+        presentedFrames: frame + 1,
+        mediaTime: frame / 24,
+      } as VideoFrameCallbackMetadata);
+      profiler.completeFrame({ frameMs: 10, uploadMs: 1, encodeMs: 1, submitMs: 1 });
+    }
+
+    expect(onSnapshot.mock.calls.at(-1)?.[0].budgetMs).toBeGreaterThan(38);
+    expect(onSnapshot.mock.calls.at(-1)?.[0].budgetMs).toBeLessThan(43);
+  });
 });

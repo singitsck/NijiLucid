@@ -10,7 +10,9 @@ import type { PipelinePass, PipelineProfileRecorder } from '../effects/backend-t
 
 const SNAPSHOT_INTERVAL_MS = 500;
 const FPS_WINDOW_MS = 1000;
-const FRAME_BUDGET_60FPS_MS = 1000 / 60;
+const DEFAULT_FRAME_BUDGET_MS = 1000 / 60;
+const MIN_FRAME_BUDGET_MS = 1000 / 120;
+const MAX_FRAME_BUDGET_MS = 1000 / 10;
 const GPU_SAMPLE_INTERVAL_MS = 1000;
 const DEFAULT_GPU_TIMESTAMP_PASS_CAPACITY = 128;
 // Two slots allow one sampled frame to map asynchronously while rendering continues.
@@ -87,6 +89,8 @@ export class PerformanceFrameProfiler implements PipelineProfileRecorder {
   private shouldSampleGpuFrame = false;
   private shouldCollectCpuPassEntries = false;
   private gpuPassCapacity = DEFAULT_GPU_TIMESTAMP_PASS_CAPACITY;
+  private frameBudgetMs = DEFAULT_FRAME_BUDGET_MS;
+  private previousMediaTime: number | null = null;
 
   constructor(
     metadata: PerformanceProfilerMetadata,
@@ -153,6 +157,19 @@ export class PerformanceFrameProfiler implements PipelineProfileRecorder {
         this.dropSamples.push({ time: now, presented, dropped });
       }
       this.previousPresentedFrames = presentedFrames;
+    }
+
+    const mediaTime = videoFrameMetadata?.mediaTime;
+    if (typeof mediaTime === 'number') {
+      if (this.previousMediaTime !== null) {
+        const intervalMs = (mediaTime - this.previousMediaTime) * 1000;
+        if (intervalMs >= MIN_FRAME_BUDGET_MS && intervalMs <= MAX_FRAME_BUDGET_MS) {
+          // Smooth cadence changes while still converging quickly from 60 to common
+          // 23.976/24/25/30 fps video budgets.
+          this.frameBudgetMs = this.frameBudgetMs * 0.75 + intervalMs * 0.25;
+        }
+      }
+      this.previousMediaTime = mediaTime;
     }
 
     while (this.dropSamples.length > 0 && now - this.dropSamples[0].time > FPS_WINDOW_MS) {
@@ -234,7 +251,7 @@ export class PerformanceFrameProfiler implements PipelineProfileRecorder {
       submitMs: timings.submitMs,
       passEntries: this.passEntries.slice(),
       groupEntries: this.buildGroupEntries(),
-      budgetMs: FRAME_BUDGET_60FPS_MS,
+      budgetMs: this.frameBudgetMs,
       timestampAvailable: this.metadata.timestampAvailable,
     });
   }

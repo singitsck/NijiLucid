@@ -1,3 +1,5 @@
+import type { GpuCapabilities } from './gpu-capabilities';
+
 export interface OptimizationFeatureFlags {
   textureLifetimeReuse: boolean;
   vectorizedPixelShuffle: boolean;
@@ -67,4 +69,26 @@ export function resolveOptimizationFeatureFlags(
   overrides?: Partial<OptimizationFeatureFlags>,
 ): OptimizationFeatureFlags {
   return { ...defaultOptimizationFeatureFlags, ...overrides };
+}
+
+/**
+ * Safari runs WebGPU on Metal. Its tile-based Apple GPU backend can have very
+ * different workgroup sweet spots from discrete desktop GPUs, so expose every
+ * exact tiled candidate to the existing bounded autotuner instead of hardcoding
+ * a chip name or assuming that a tiled kernel is faster.
+ */
+export function resolveCapabilityDrivenOptimizationFeatureFlags(
+  capabilities: GpuCapabilities,
+  overrides?: Partial<OptimizationFeatureFlags>,
+): OptimizationFeatureFlags {
+  const platformDefaults: Partial<OptimizationFeatureFlags> =
+    capabilities.browser.name === 'safari'
+      ? {
+          cunnyWorkgroupTile: true,
+          acnetWorkgroupTile: true,
+          anime4kWorkgroupTile: true,
+        }
+      : {};
+
+  return resolveOptimizationFeatureFlags({ ...platformDefaults, ...overrides });
 }

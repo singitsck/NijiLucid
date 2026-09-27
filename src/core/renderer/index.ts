@@ -9,7 +9,10 @@ import type { PipelinePass } from '../effects/backend-types';
 import { compileEffectChain } from '../effects/chain-compiler';
 import { getEffectDescriptor } from '../effects/registry';
 import { normalizeError, RendererInitializationError, RendererRuntimeError } from '../errors';
-import { getRequiredDeviceLimits } from '../gpu-device-limits';
+import {
+  createPreferredAdapterOptions,
+  createRuntimeDeviceDescriptor,
+} from '../gpu-device-profile';
 import {
   createBindGroupChecked,
   clearGpuResourceCache,
@@ -20,13 +23,18 @@ import {
   getOrCreateShaderModule,
 } from '../gpu-resource-cache';
 import { RendererGpuErrorMonitor } from './gpu-error-monitor';
-import { clearTexturePool, getTexturePoolStats } from '../texture-pool';
+import {
+  clearTexturePool,
+  getTexturePoolStats,
+  setTexturePoolBudgetForDevice,
+} from '../texture-pool';
 import { VideoFrameUploader } from './frame-uploader';
 import { createLogger } from '../../utils/logger';
 import { waitForMediaReady } from '../media-wait';
 import { PerformanceFrameProfiler, type PerformanceProfilerMetadata } from '../performance-monitor/profiler';
 import { collectGpuCapabilities, type GpuCapabilities } from '../gpu-capabilities';
 import {
+  resolveCapabilityDrivenOptimizationFeatureFlags,
   resolveOptimizationFeatureFlags,
   type OptimizationFeatureFlags,
 } from '../optimization-flags';
@@ -34,6 +42,13 @@ import { acquireSharedGpuDevice, type SharedGpuDeviceLease } from '../shared-gpu
 
 const logger = createLogger('renderer');
 const RENDERER_DEVICE_PROFILE_KEY = 'renderer-v1';
+const MIB = 1024 * 1024;
+const SAFARI_TEXTURE_POOL_BUDGETS: Readonly<Record<PerformanceTier, number>> = {
+  performance: 256 * MIB,
+  balanced: 384 * MIB,
+  quality: 512 * MIB,
+  ultra: 768 * MIB,
+};
 
 /**
  * 全屏纹理三角形顶点着色器
@@ -126,7 +141,8 @@ export class Renderer {
   private performanceModeName: string;
   private performanceTier: PerformanceTier;
   private onPerformanceSnapshot?: (snapshot: FramePerformanceSnapshot) => void;
-  private readonly optimizationFlags: OptimizationFeatureFlags;
+  private optimizationFlags: OptimizationFeatureFlags;
+  private readonly optimizationFlagOverrides?: Partial<OptimizationFeatureFlags>;
   private performanceProfiler: PerformanceFrameProfiler | null = null;
   private gpuName = 'Unknown GPU';
   private timestampQueryAvailable = false;
@@ -203,7 +219,10 @@ export class Renderer {
     this.performanceModeName = options.performanceModeName ?? 'Unknown';
     this.performanceTier = options.performanceTier ?? 'balanced';
     this.onPerformanceSnapshot = options.onPerformanceSnapshot;
-    this.optimizationFlags = resolveOptimizationFeatureFlags(options.optimizationFlags);
+    this.optimizationFlagOverrides = options.optimizationFlags
+      ? { ...options.optimizationFlags }
+      : undefined;
+    this.optimizationFlags = resolveOptimizationFeatureFlags(this.optimizationFlagOverrides);
   }
 
   /**
@@ -236,12 +255,7 @@ export class Renderer {
         gpu: navigator.gpu,
         adapterOptions,
         deviceProfileKey: RENDERER_DEVICE_PROFILE_KEY,
-        descriptorFactory: adapter => ({
-          ...(adapter.features?.has('timestamp-query')
-            ? { requiredFeatures: ['timestamp-query' as GPUFeatureName] }
-            : {}),
-          requiredLimits: getRequiredDeviceLimits(adapter),
-        }),
+        descriptorFactory: createRuntimeDeviceDescriptor,
       });
       this.deviceLease = lease;
       const { adapter } = lease;
@@ -259,6 +273,11 @@ export class Renderer {
         device: this.device,
         presentationFormat: this.presentationFormat,
       });
+      this.optimizationFlags = resolveCapabilityDrivenOptimizationFeatureFlags(
+        this.gpuCapabilities,
+        this.optimizationFlagOverrides,
+      );
+      this.configureTexturePoolBudget();
       // 监听设备丢失事件并尝试自动恢复
       this.device.lost.then((info) => {
         // 如果渲染器已销毁，不需要处理
@@ -357,17 +376,36 @@ export class Renderer {
       return false;
     }
 
-    // Preserve the existing explicit opt-in behavior for Chromium and other
-    // implementations. Firefox is auto-enabled only after a real upload probe.
-    if (capabilities.browser.name !== 'firefox') {
+    const browser = capabilities.browser.name;
+    const safariMajor = Number.parseInt(capabilities.browser.version, 10);
+    const shouldProbeFirefox = browser === 'firefox';
+    const shouldProbeSafari = browser === 'safari'
+      && safariMajor >= 27
+      && this.isSafariExternalTextureSourceEligible();
+
+    // Chromium keeps the explicit opt-in behavior. Firefox and safe Safari 27+
+    // sources are promoted only after exercising the real import/render path.
+    if (!shouldProbeFirefox && !shouldProbeSafari) {
       return this.optimizationFlags.externalTexture;
     }
 
     const supported = await Renderer.detectExternalTextureFeatures(this.device, this.video);
     if (!supported) {
-      logger.info('Firefox external texture probe failed; using copy fallback.');
+      logger.info(`${browser} external texture probe failed; using copy fallback.`);
     }
     return supported;
+  }
+
+  private isSafariExternalTextureSourceEligible(): boolean {
+    const currentSource = this.video.currentSrc.toLowerCase();
+    // Safari 27.0 has known external-texture issues with WebM and MSE-backed video.
+    // Keep those sources on the native copy path until the shipping fix is present.
+    if (currentSource.startsWith('blob:') || /(?:\.webm)(?:$|[?#])/.test(currentSource)) {
+      return false;
+    }
+
+    return !Array.from(this.video.querySelectorAll('source')).some(source =>
+      source.type.toLowerCase().includes('webm'));
   }
 
   private destroyPipelines(): void {
@@ -391,12 +429,7 @@ export class Renderer {
   }
 
   private createAdapterOptions(): GPURequestAdapterOptions {
-    const adapterOptions: GPURequestAdapterOptions = {};
-    // Windows browsers currently warn when powerPreference is specified.
-    if (!navigator.platform.startsWith('Win')) {
-      adapterOptions.powerPreference = 'high-performance';
-    }
-    return adapterOptions;
+    return createPreferredAdapterOptions();
   }
 
   private releaseDeviceLease(destroyIfLast: boolean, invalidate = false): void {
@@ -972,6 +1005,7 @@ export class Renderer {
     this.performanceMonitorMode = options.mode;
     this.performanceModeName = options.modeName;
     this.performanceTier = options.tier;
+    this.configureTexturePoolBudget();
     this.targetDimensions = options.targetDimensions;
     this.onPerformanceSnapshot = options.onSnapshot;
 
@@ -1094,12 +1128,7 @@ export class Renderer {
         gpu: navigator.gpu,
         adapterOptions: this.createAdapterOptions(),
         deviceProfileKey: RENDERER_DEVICE_PROFILE_KEY,
-        descriptorFactory: adapter => ({
-          ...(adapter.features?.has('timestamp-query')
-            ? { requiredFeatures: ['timestamp-query' as GPUFeatureName] }
-            : {}),
-          requiredLimits: getRequiredDeviceLimits(adapter),
-        }),
+        descriptorFactory: createRuntimeDeviceDescriptor,
       });
       this.deviceLease = lease;
       const { adapter } = lease;
@@ -1112,6 +1141,11 @@ export class Renderer {
         device: this.device,
         presentationFormat: this.presentationFormat,
       });
+      this.optimizationFlags = resolveCapabilityDrivenOptimizationFeatureFlags(
+        this.gpuCapabilities,
+        this.optimizationFlagOverrides,
+      );
+      this.configureTexturePoolBudget();
 
       // 设置新设备的丢失监听
       this.device.lost.then((info) => {
@@ -1255,6 +1289,14 @@ export class Renderer {
       device: this.device,
       passCapacity,
     });
+  }
+
+  private configureTexturePoolBudget(): void {
+    if (!this.device || this.gpuCapabilities?.browser.name !== 'safari') return;
+    setTexturePoolBudgetForDevice(
+      this.device,
+      SAFARI_TEXTURE_POOL_BUDGETS[this.performanceTier],
+    );
   }
 
   private describeAdapter(adapter: GPUAdapter): string {
